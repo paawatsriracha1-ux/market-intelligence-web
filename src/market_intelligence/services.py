@@ -30,7 +30,6 @@ def resolve_analysis_window(value: str) -> dict:
     }
     key = aliases.get(key, key)
     if key not in ANALYSIS_WINDOWS:
-        # Preserve compatibility for callers passing native yfinance periods.
         return {"period": str(value), "interval": "1d", "trim_days": None, "label": str(value).upper()}
     return {**ANALYSIS_WINDOWS[key], "label": key}
 
@@ -38,21 +37,40 @@ def resolve_analysis_window(value: str) -> dict:
 def _trim_window(df: pd.DataFrame, days: int | None) -> pd.DataFrame:
     if not days or df.empty:
         return df
+    attrs = dict(df.attrs)
     end = pd.to_datetime(df["Date"]).max()
     start = end - pd.Timedelta(days=int(days))
     out = df[pd.to_datetime(df["Date"]) >= start].copy().reset_index(drop=True)
-    # A holiday-heavy week can be sparse; keep at least the most recent 20 bars.
     if len(out) < 20:
         out = df.tail(min(len(df), 80)).copy().reset_index(drop=True)
+    out.attrs.update(attrs)
     return out
+
+
+def _require_reliable_market_data(df: pd.DataFrame) -> dict:
+    """M1.3 fail-closed boundary between provider data and trading analysis."""
+    if df is None or df.empty:
+        raise ValueError("Market data is empty")
+    quality = df.attrs.get("market_data_quality")
+    reliability = df.attrs.get("market_data_reliability")
+    if not isinstance(quality, dict):
+        raise ValueError("Market data reliability metadata is missing")
+    if reliability != "verified":
+        raise ValueError("Market data is not verified")
+    if not quality.get("valid") or not quality.get("signal_allowed"):
+        raise ValueError("Market data is not eligible for trading signals")
+    return quality
 
 
 def analyze_symbol(symbol, market="US", period="2Y", interval=None, equity=1_000_000, risk_pct=1.0):
     spec = resolve_analysis_window(period)
     use_interval = interval or spec["interval"]
     raw = provider.fetch(symbol, market, spec["period"], use_interval)
+    _require_reliable_market_data(raw)
     raw = _trim_window(raw, spec.get("trim_days"))
+    _require_reliable_market_data(raw)
     enriched = add_indicators(raw)
+    enriched.attrs.update(raw.attrs)
     return enriched, build_trade_plan(enriched, equity=equity, risk_pct=risk_pct, market=market)
 
 
