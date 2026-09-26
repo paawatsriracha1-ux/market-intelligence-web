@@ -72,11 +72,21 @@ class YFinanceProvider:
         for c in required[1:]:
             out[c] = pd.to_numeric(out[c], errors="coerce")
 
-        # M1.1 fail-closed quality gate. Never silently repair provider data.
-        out, report = validate_market_frame(out)
+        # M1.2 live reliability gate. Intraday feeds fail closed on stale bars and
+        # suspicious timestamp gaps. Daily/weekly history retains M1.1 structural
+        # validation because weekends/holidays make wall-clock freshness unsuitable.
+        interval_text = str(interval).lower()
+        live_intraday = interval_text.endswith("m") or interval_text.endswith("h")
+        out, report = validate_market_frame(
+            out,
+            interval=interval_text,
+            enforce_freshness=live_intraday,
+            enforce_gaps=live_intraday,
+        )
         out.attrs["market_data_quality"] = report.to_dict()
         out.attrs["market_data_source"] = "yfinance"
         out.attrs["market_data_symbol"] = ticker
-        out.attrs["market_data_interval"] = str(interval)
+        out.attrs["market_data_interval"] = interval_text
+        out.attrs["market_data_reliability"] = "verified"
         self._cache_put(key, out)
         return out.copy(deep=True)
