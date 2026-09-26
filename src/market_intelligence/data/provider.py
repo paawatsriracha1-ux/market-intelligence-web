@@ -12,10 +12,7 @@ def normalize_symbol(symbol: str, market: str) -> str:
     return s
 
 class YFinanceProvider:
-    """Yahoo Finance market-data provider with a small in-process TTL cache.
-
-    The cache reduces repeated network calls caused by Streamlit reruns.
-    """
+    """Yahoo Finance market-data provider with a small in-process TTL cache."""
     def __init__(self, ttl_seconds: int = 300):
         self.ttl_seconds = int(ttl_seconds)
         self._cache: dict[tuple, tuple[float, pd.DataFrame]] = {}
@@ -41,14 +38,15 @@ class YFinanceProvider:
         with self._lock:
             self._cache.clear()
 
-    def fetch(self, symbol, market="US", period="2y", interval="1d") -> pd.DataFrame:
+    def fetch(self, symbol, market="US", period="2y", interval="1d", reliability_profile=None) -> pd.DataFrame:
         try:
             import yfinance as yf
         except ImportError as exc:
             raise RuntimeError("yfinance is not installed. Run pip install -r requirements.txt") from exc
 
         ticker = normalize_symbol(symbol, market)
-        key = (ticker, str(period), str(interval))
+        profile = str(reliability_profile or "auto").strip().upper()
+        key = (ticker, str(period), str(interval), profile)
         cached = self._cache_get(key)
         if cached is not None:
             return cached
@@ -72,21 +70,26 @@ class YFinanceProvider:
         for c in required[1:]:
             out[c] = pd.to_numeric(out[c], errors="coerce")
 
-        # M1.2 live reliability gate. Intraday feeds fail closed on stale bars and
-        # suspicious timestamp gaps. Daily/weekly history retains M1.1 structural
-        # validation because weekends/holidays make wall-clock freshness unsuitable.
+        # M1.4 timeframe-aware reliability policy.
+        # 1D/7D are live intraday views: structural checks plus session-aware
+        # freshness/gap validation. 1M+ are historical analysis windows: retain
+        # strict OHLCV/timestamp validation but do not treat market closures or
+        # historical spacing as live-feed failures.
         interval_text = str(interval).lower()
-        live_intraday = interval_text.endswith("m") or interval_text.endswith("h")
+        intraday_interval = interval_text.endswith("m") or interval_text.endswith("h")
+        live_profile = profile in {"1D", "7D"} or (profile == "AUTO" and intraday_interval and str(period).lower() in {"1d", "5d", "7d"})
         out, report = validate_market_frame(
             out,
             interval=interval_text,
-            enforce_freshness=live_intraday,
-            enforce_gaps=live_intraday,
+            enforce_freshness=live_profile,
+            enforce_gaps=live_profile,
+            session_aware=live_profile,
         )
         out.attrs["market_data_quality"] = report.to_dict()
         out.attrs["market_data_source"] = "yfinance"
         out.attrs["market_data_symbol"] = ticker
         out.attrs["market_data_interval"] = interval_text
+        out.attrs["market_data_timeframe"] = profile
         out.attrs["market_data_reliability"] = "verified"
         self._cache_put(key, out)
         return out.copy(deep=True)
