@@ -60,12 +60,15 @@ def validate_market_frame(
     gap_multiplier: float = 3.0,
     enforce_freshness: bool = False,
     enforce_gaps: bool = False,
+    session_aware: bool = False,
 ) -> tuple[pd.DataFrame, MarketDataQualityReport]:
     """Validate OHLCV without inventing, interpolating, or repairing prices.
 
-    M1.2 adds optional interval-aware freshness and gap checks. They are opt-in so
-    historical/backtest callers keep deterministic behaviour. Live providers can
-    enable both checks and fail closed before signals are generated.
+    M1.4 supports session-aware intraday checks. When ``session_aware`` is true,
+    freshness is enforced only while the newest bar and validation time are on
+    the same UTC trading date, and gap checks compare bars only within the same
+    UTC date. This prevents weekends, overnight closures and ordinary session
+    boundaries from being misclassified as missing market data.
     """
     if frame is None or frame.empty:
         raise ValueError("Market data is empty")
@@ -93,7 +96,6 @@ def validate_market_frame(
         issues.append("invalid_ohlc_relationship")
 
     checked_at = _utc_naive(now)
-    interval_seconds: int | None = None
     age_seconds: float | None = None
     stale_after_seconds: float | None = None
     gap_count = 0
@@ -105,11 +107,17 @@ def validate_market_frame(
         age_seconds = max(0.0, float((checked_at - source_ts).total_seconds()))
         stale_after_seconds = float(interval_seconds * stale_multiplier)
 
-        if enforce_freshness and age_seconds > stale_after_seconds:
+        same_session_date = source_ts.normalize() == checked_at.normalize()
+        should_check_freshness = enforce_freshness and (not session_aware or same_session_date)
+        if should_check_freshness and age_seconds > stale_after_seconds:
             issues.append("stale_market_data")
 
         if len(out) > 1:
             gaps = out["Date"].diff().dropna().dt.total_seconds()
+            if session_aware:
+                current_dates = out["Date"].dt.normalize()
+                same_date = current_dates.eq(current_dates.shift(1)).iloc[1:]
+                gaps = gaps[same_date.to_numpy()]
             if not gaps.empty:
                 max_gap_seconds = float(gaps.max())
                 gap_limit = float(interval_seconds * gap_multiplier)
