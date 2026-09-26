@@ -3,6 +3,8 @@ import threading
 import time
 import pandas as pd
 
+from .quality import validate_market_frame
+
 def normalize_symbol(symbol: str, market: str) -> str:
     s = symbol.strip().upper()
     if market.strip().upper() == "TH" and not s.endswith(".BK"):
@@ -69,8 +71,12 @@ class YFinanceProvider:
         out["Date"] = pd.to_datetime(out["Date"], utc=True, errors="coerce").dt.tz_convert(None)
         for c in required[1:]:
             out[c] = pd.to_numeric(out[c], errors="coerce")
-        out = out.dropna(subset=required[:5]).sort_values("Date").reset_index(drop=True)
-        if out.empty:
-            raise ValueError(f"Market data for {ticker} became empty after validation")
+
+        # M1.1 fail-closed quality gate. Never silently repair provider data.
+        out, report = validate_market_frame(out)
+        out.attrs["market_data_quality"] = report.to_dict()
+        out.attrs["market_data_source"] = "yfinance"
+        out.attrs["market_data_symbol"] = ticker
+        out.attrs["market_data_interval"] = str(interval)
         self._cache_put(key, out)
         return out.copy(deep=True)
