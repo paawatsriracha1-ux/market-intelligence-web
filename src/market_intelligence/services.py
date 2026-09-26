@@ -9,8 +9,6 @@ from .strategy.guidance import build_technical_guidance
 
 provider = YFinanceProvider()
 
-# UI analysis windows. Short windows use intraday bars so indicators still have
-# enough observations to be useful. 7D is sourced from 1 month then trimmed.
 ANALYSIS_WINDOWS = {
     "1D": {"period": "1d", "interval": "5m", "trim_days": None},
     "7D": {"period": "1mo", "interval": "30m", "trim_days": 7},
@@ -65,7 +63,7 @@ def _require_reliable_market_data(df: pd.DataFrame) -> dict:
 def analyze_symbol(symbol, market="US", period="2Y", interval=None, equity=1_000_000, risk_pct=1.0):
     spec = resolve_analysis_window(period)
     use_interval = interval or spec["interval"]
-    raw = provider.fetch(symbol, market, spec["period"], use_interval)
+    raw = provider.fetch(symbol, market, spec["period"], use_interval, reliability_profile=spec["label"])
     _require_reliable_market_data(raw)
     raw = _trim_window(raw, spec.get("trim_days"))
     _require_reliable_market_data(raw)
