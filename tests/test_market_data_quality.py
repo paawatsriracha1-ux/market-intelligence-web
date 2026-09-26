@@ -26,4 +26,37 @@ class MarketDataQualityTests(unittest.TestCase):
         frame=valid_frame(); frame.loc[1,"Close"]=0
         with self.assertRaisesRegex(ValueError,"non_positive_price"): validate_market_frame(frame)
 
+    def test_m12_fresh_intraday_frame_reports_reliability_metadata(self):
+        frame, report = validate_market_frame(
+            valid_frame(), interval="5m", now=pd.Timestamp("2026-09-25 03:10"),
+            enforce_freshness=True, enforce_gaps=True,
+        )
+        self.assertEqual(len(frame), 2)
+        self.assertEqual(report.interval, "5m")
+        self.assertEqual(report.age_seconds, 300.0)
+        self.assertEqual(report.stale_after_seconds, 900.0)
+        self.assertEqual(report.gap_count, 0)
+        self.assertTrue(report.signal_allowed)
+
+    def test_m12_stale_intraday_data_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "stale_market_data"):
+            validate_market_frame(
+                valid_frame(), interval="5m", now=pd.Timestamp("2026-09-25 03:30"),
+                enforce_freshness=True,
+            )
+
+    def test_m12_large_intraday_gap_fails_closed(self):
+        frame = valid_frame()
+        frame.loc[1, "Date"] = pd.Timestamp("2026-09-25 03:30")
+        with self.assertRaisesRegex(ValueError, "market_data_gap"):
+            validate_market_frame(
+                frame, interval="5m", now=pd.Timestamp("2026-09-25 03:35"),
+                enforce_gaps=True,
+            )
+
+    def test_m12_historical_call_does_not_enforce_wall_clock_freshness(self):
+        _, report = validate_market_frame(valid_frame(), interval="5m", now=pd.Timestamp("2026-10-01"))
+        self.assertGreater(report.age_seconds, report.stale_after_seconds)
+        self.assertTrue(report.signal_allowed)
+
 if __name__ == "__main__": unittest.main()
