@@ -7,6 +7,82 @@ def valid_frame():
     return pd.DataFrame({"Date": pd.to_datetime(["2026-09-25 03:00", "2026-09-25 03:05"]), "Open": [10.0,10.2], "High": [10.5,10.6], "Low": [9.9,10.1], "Close": [10.2,10.4], "Volume": [1000,1200]})
 
 class MarketDataQualityTests(unittest.TestCase):
+    def test_m141_set_lunch_break_is_not_false_gap(self):
+        """M1.4.1: normal SET lunch break must not be treated as missing data."""
+        frame = valid_frame()
+
+        # Simulate real PTT.BK / Yahoo 5-minute session boundary:
+        # 05:25 UTC = 12:25 Bangkok
+        # 06:55 UTC = 13:55 Bangkok
+        frame = frame.iloc[:2].copy()
+        frame["Date"] = pd.to_datetime(
+            [
+                "2026-09-25 05:25:00",
+                "2026-09-25 06:55:00",
+            ]
+        )
+
+        _, report = validate_market_frame(
+            frame,
+            interval="5m",
+            now=pd.Timestamp("2026-09-25 07:00:00"),
+            enforce_gaps=True,
+            session_aware=True,
+            symbol="PTT.BK",
+        )
+
+        self.assertTrue(report.valid)
+        self.assertTrue(report.signal_allowed)
+        self.assertEqual(report.gap_count, 0)
+        self.assertEqual(report.issues, ())
+
+
+    def test_m141_set_same_session_gap_still_fails_closed(self):
+        """M1.4.1: missing SET bars inside a trading session must fail closed."""
+        frame = valid_frame()
+
+        frame = frame.iloc[:2].copy()
+        frame["Date"] = pd.to_datetime(
+            [
+                "2026-09-25 03:00:00",
+                "2026-09-25 03:30:00",
+            ]
+        )
+
+        with self.assertRaisesRegex(ValueError, "market_data_gap"):
+            validate_market_frame(
+                frame,
+                interval="5m",
+                now=pd.Timestamp("2026-09-25 03:35:00"),
+                enforce_gaps=True,
+                session_aware=True,
+                symbol="PTT.BK",
+            )
+
+
+    def test_m141_non_set_gap_is_not_suppressed(self):
+        """M1.4.1: SET lunch-break exception must never leak to non-.BK symbols."""
+        frame = valid_frame()
+
+        # Same timestamps as the SET lunch-break case,
+        # but AAPL must not receive the .BK exception.
+        frame = frame.iloc[:2].copy()
+        frame["Date"] = pd.to_datetime(
+            [
+                "2026-09-25 05:25:00",
+                "2026-09-25 06:55:00",
+            ]
+        )
+
+        with self.assertRaisesRegex(ValueError, "market_data_gap"):
+            validate_market_frame(
+                frame,
+                interval="5m",
+                now=pd.Timestamp("2026-09-25 07:00:00"),
+                enforce_gaps=True,
+                session_aware=True,
+                symbol="AAPL",
+            )
     def test_valid_frame_is_signal_eligible(self):
         frame, report = validate_market_frame(valid_frame())
         self.assertEqual(len(frame), 2); self.assertTrue(report.valid); self.assertTrue(report.signal_allowed)

@@ -61,6 +61,7 @@ def validate_market_frame(
     enforce_freshness: bool = False,
     enforce_gaps: bool = False,
     session_aware: bool = False,
+    symbol: str | None = None,
 ) -> tuple[pd.DataFrame, MarketDataQualityReport]:
     """Validate OHLCV without inventing, interpolating, or repairing prices.
 
@@ -112,23 +113,65 @@ def validate_market_frame(
         if should_check_freshness and age_seconds > stale_after_seconds:
             issues.append("stale_market_data")
 
-        if len(out) > 1:
-            gaps = out["Date"].diff().dropna().dt.total_seconds()
-            if session_aware:
-                current_dates = out["Date"].dt.normalize()
-                same_date = current_dates.eq(current_dates.shift(1)).iloc[1:]
-                gaps = gaps[same_date.to_numpy()]
-            if not gaps.empty:
-                max_gap_seconds = float(gaps.max())
-                gap_limit = float(interval_seconds * gap_multiplier)
-                gap_count = int((gaps > gap_limit).sum())
-                if enforce_gaps and gap_count:
-                    issues.append("market_data_gap")
+    if len(out) > 1 and interval is not None:
+        gaps = out["Date"].diff().dropna().dt.total_seconds()
+
+        if session_aware:
+            current_dates = out["Date"].dt.normalize()
+            same_date = current_dates.eq(current_dates.shift(1)).iloc[1:]
+
+            # Ignore ordinary overnight/session boundaries.
+            # Missing bars inside the same trading date remain eligible
+            # for fail-closed gap validation.
+            valid_gap_mask = same_date.to_numpy()
+
+            # M1.4.1 — SET (.BK) scheduled midday session break.
+            if symbol and str(symbol).upper().endswith(".BK"):
+                previous_times = out["Date"].shift(1).iloc[1:]
+                current_times = out["Date"].iloc[1:]
+
+                previous_minutes = (
+                    previous_times.dt.hour * 60
+                    + previous_times.dt.minute
+                )
+                current_minutes = (
+                    current_times.dt.hour * 60
+                    + current_times.dt.minute
+                )
+
+                # Date is UTC-naive here.
+                # Normal SET lunch/session boundary appears roughly as:
+                # morning close 04:xx UTC -> afternoon open 06:xx UTC.
+                set_lunch_break = (
+                    (previous_minutes >= 5 * 60)
+                    & (previous_minutes <= 5 * 60 + 30)
+                    & (current_minutes >= 6 * 60 + 45)
+                    & (current_minutes <= 7 * 60 + 15)
+                )
+
+                valid_gap_mask = (
+                    valid_gap_mask
+                    & ~set_lunch_break.to_numpy()
+                )
+
+            gaps = gaps[valid_gap_mask]
+
+        if not gaps.empty:
+            max_gap_seconds = float(gaps.max())
+            gap_limit = float(interval_seconds * gap_multiplier)
+            gap_count = int((gaps > gap_limit).sum())
+
+            if enforce_gaps and gap_count:
+                issues.append("market_data_gap")
 
     if issues:
-        raise ValueError("Unreliable market data: " + ", ".join(dict.fromkeys(issues)))
+        raise ValueError(
+            "Unreliable market data: "
+            + ", ".join(dict.fromkeys(issues))
+        )
 
     source_timestamp = out["Date"].iloc[-1].isoformat()
+
     report = MarketDataQualityReport(
         valid=True,
         signal_allowed=True,
@@ -142,4 +185,5 @@ def validate_market_frame(
         gap_count=gap_count,
         max_gap_seconds=max_gap_seconds,
     )
+
     return out.reset_index(drop=True), report

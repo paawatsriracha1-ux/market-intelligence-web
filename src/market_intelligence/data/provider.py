@@ -84,6 +84,7 @@ class YFinanceProvider:
             enforce_freshness=live_profile,
             enforce_gaps=live_profile,
             session_aware=live_profile,
+   		symbol=ticker,
         )
         out.attrs["market_data_quality"] = report.to_dict()
         out.attrs["market_data_source"] = "yfinance"
