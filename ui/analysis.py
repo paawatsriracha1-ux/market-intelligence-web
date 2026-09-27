@@ -72,6 +72,34 @@ if st.button("Analyze market", type="primary", width="stretch"):
             for reason in final_decision.reasons:
                 st.write(f"• {reason}")
 
+        st.markdown("### Why this Final Decision")
+
+        if final_decision.reasons:
+            for reason in final_decision.reasons:
+                st.write(f"- {reason}")
+        else:
+            st.info(
+                "No additional decision explanation was provided "
+                "by the final decision engine."
+            )
+
+        if final_decision.reason_codes:
+            st.caption(
+                "Decision codes: "
+                + ", ".join(final_decision.reason_codes)
+            )
+
+        if final_bundle.actionable:
+            st.success(
+                "Actionable: the final decision permits "
+                "trade-level presentation."
+            )
+        else:
+            st.info(
+                "Not actionable: executable trade levels "
+                "remain withheld."
+            )
+
         st.markdown("### Trade Map")
         st.caption(f"{guide.profile_label} profile • {guide.holding_note}")
 
