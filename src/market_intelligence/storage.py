@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import settings
+from market_intelligence.decision.bundle import FinalDecisionBundle
 
 
 class Storage:
@@ -369,6 +370,17 @@ class Storage:
             active = int(con.execute("SELECT COUNT(*) FROM users WHERE status='active'").fetchone()[0])
             pending = int(con.execute("SELECT COUNT(*) FROM users WHERE status='pending'").fetchone()[0])
             return {"total": total, "active": active, "pending": pending}
+
+
+    @staticmethod
+    def reconstruct_final_decision_bundle(
+        payload: dict[str, object],
+    ) -> FinalDecisionBundle:
+        """Reconstruct a persisted final decision bundle."""
+        if not isinstance(payload, dict):
+            raise TypeError("bundle payload must be a dict")
+
+        return FinalDecisionBundle.from_dict(payload)
 
     # ---------- current user workspace ----------
     def _uid(self) -> int:
