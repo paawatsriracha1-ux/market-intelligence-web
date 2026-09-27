@@ -1,4 +1,4 @@
-﻿"""Final decision consumer boundary.
+"""Final decision consumer boundary.
 
 M2.3.8
 
@@ -24,12 +24,21 @@ from .pipeline import evaluate_safe_decision
 
 
 @dataclass(frozen=True)
+class DecisionTrace:
+    """Non-authoritative metadata for decision traceability."""
+
+    schema_version: str = "1.0"
+    decision_id: str = ""
+
+
+@dataclass(frozen=True)
 class FinalDecisionBundle:
     """Final consumer-safe decision result."""
 
     decision: DecisionResult
     guidance: ActionableGuidance
     schema_version: str = "m2.3.8"
+    trace: DecisionTrace = DecisionTrace()
 
     @property
     def actionable(self) -> bool:
@@ -109,6 +118,7 @@ def evaluate_final_decision(
         return FinalDecisionBundle(
             decision=decision,
             guidance=blocked_guidance,
+            trace=DecisionTrace(),
         )
 
     actionable_guidance = evaluate_actionable_guidance(
@@ -119,4 +129,5 @@ def evaluate_final_decision(
     return FinalDecisionBundle(
         decision=decision,
         guidance=actionable_guidance,
+        trace=DecisionTrace(),
     )
