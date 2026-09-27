@@ -37,6 +37,16 @@ class DecisionTrace:
             "decision_id": self.decision_id,
         }
 
+    @classmethod
+    def from_dict(
+        cls,
+        payload: dict[str, str],
+    ) -> "DecisionTrace":
+        return cls(
+            schema_version=payload["schema_version"],
+            decision_id=payload["decision_id"],
+        )
+
 
 @dataclass(frozen=True)
 class FinalDecisionBundle:
