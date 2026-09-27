@@ -11,6 +11,7 @@ decision policy, or decision safety.
 """
 
 from __future__ import annotations
+import hashlib
 
 from dataclasses import dataclass, fields
 from typing import Any, Mapping
@@ -86,6 +87,20 @@ def reconstruct_technical_guidance(
         ) from exc
 
 
+
+def _decision_id_for_snapshot(snapshot: AnalysisSnapshot) -> str:
+    identity = "|".join(
+        (
+            snapshot.schema_version,
+            snapshot.market,
+            snapshot.symbol,
+            snapshot.timeframe,
+            snapshot.timestamp,
+        )
+    )
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+
 def evaluate_final_decision(
     snapshot: AnalysisSnapshot,
 ) -> FinalDecisionBundle:
@@ -93,6 +108,10 @@ def evaluate_final_decision(
 
     if not isinstance(snapshot, AnalysisSnapshot):
         raise TypeError("snapshot must be an AnalysisSnapshot")
+
+    decision_trace = DecisionTrace(
+        decision_id=_decision_id_for_snapshot(snapshot),
+    )
 
     decision = evaluate_safe_decision(snapshot)
 
@@ -118,7 +137,7 @@ def evaluate_final_decision(
         return FinalDecisionBundle(
             decision=decision,
             guidance=blocked_guidance,
-            trace=DecisionTrace(),
+            trace=decision_trace,
         )
 
     actionable_guidance = evaluate_actionable_guidance(
@@ -129,5 +148,5 @@ def evaluate_final_decision(
     return FinalDecisionBundle(
         decision=decision,
         guidance=actionable_guidance,
-        trace=DecisionTrace(),
+        trace=decision_trace,
     )
