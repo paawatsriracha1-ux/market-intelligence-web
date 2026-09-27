@@ -42,22 +42,42 @@ if st.button("Analyze market", type="primary", width="stretch"):
         with st.spinner(f"Analyzing {symbol} • {period} • {profile_label}..."):
             df, plan, guide, snapshot, final_bundle = analyze_symbol_v5(symbol, market, period=period, equity=equity, risk_pct=risk, trading_profile=profile)
 
+        final_decision = final_bundle.decision
+
         st.plotly_chart(price_chart(df, f"{symbol} • {market} • {period} • {guide.profile_label}", guide, compact=mobile), width="stretch")
 
         metric_data = [
-            ("Technical score", f"{plan.score}/100"), ("Trend", plan.trend), ("Signal", plan.signal),
+            ("Technical score", f"{plan.score}/100"), ("Trend", plan.trend), ("Technical Signal", plan.signal),
             ("RSI", f"{df.iloc[-1]['RSI14']:.1f}"), ("Confidence", f"{guide.confidence}/100"),
         ]
         cols = st.columns(2 if mobile else 5)
         for idx, (label, value) in enumerate(metric_data):
             cols[idx % len(cols)].metric(label, value)
 
+        st.markdown("### Final Decision")
+
+        decision_metrics = [
+            ("Action", final_decision.action.value),
+            ("Confidence", f"{final_decision.confidence}/100"),
+            ("Eligible", "Yes" if final_decision.eligible else "No"),
+            ("Actionable", "Yes" if final_bundle.actionable else "No"),
+        ]
+
+        cols = st.columns(2 if mobile else 4)
+        for idx, (label, value) in enumerate(decision_metrics):
+            cols[idx % len(cols)].metric(label, value)
+
+        if final_decision.reasons:
+            st.markdown("**Decision reasons**")
+            for reason in final_decision.reasons:
+                st.write(f"• {reason}")
+
         st.markdown("### Trade Map")
         st.caption(f"{guide.profile_label} profile • {guide.holding_note}")
 
         actionable_guidance = final_bundle.guidance
 
-        if actionable_guidance.actionable:
+        if final_bundle.actionable:
             guidance_metrics = [
                 ("Buy trigger", f"{actionable_guidance.buy_trigger:,.4f}"),
                 (
