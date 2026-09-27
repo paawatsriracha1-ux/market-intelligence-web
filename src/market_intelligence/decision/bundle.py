@@ -31,6 +31,12 @@ class DecisionTrace:
     schema_version: str = "1.0"
     decision_id: str = ""
 
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "schema_version": self.schema_version,
+            "decision_id": self.decision_id,
+        }
+
 
 @dataclass(frozen=True)
 class FinalDecisionBundle:
