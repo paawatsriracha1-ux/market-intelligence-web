@@ -1,6 +1,7 @@
 import streamlit as st
 
 from market_intelligence.services import analyze_symbol_v5
+from ui.auth import user_storage
 from ui.common import price_chart
 from ui.web_shell import is_mobile_mode
 
@@ -40,7 +41,7 @@ st.markdown(
 if st.button("Analyze market", type="primary", width="stretch"):
     try:
         with st.spinner(f"Analyzing {symbol} • {period} • {profile_label}..."):
-            df, plan, guide, snapshot, final_bundle = analyze_symbol_v5(symbol, market, period=period, equity=equity, risk_pct=risk, trading_profile=profile)
+            df, plan, guide, snapshot, final_bundle = analyze_symbol_v5(symbol, market, period=period, equity=equity, risk_pct=risk, trading_profile=profile, storage=user_storage())
 
         final_decision = final_bundle.decision
 

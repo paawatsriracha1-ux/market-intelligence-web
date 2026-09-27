@@ -92,6 +92,7 @@ def analyze_symbol_v5(
     equity=1_000_000,
     risk_pct=1.0,
     trading_profile="SWING",
+    storage=None,
 ):
     """Canonical V5 analysis and final decision orchestration."""
     df, plan = analyze_symbol(
@@ -115,6 +116,31 @@ def analyze_symbol_v5(
     )
 
     final_bundle = evaluate_final_decision(snapshot)
+
+    if storage is not None:
+        storage.save_final_decision_bundle(
+            symbol,
+            market,
+            final_bundle,
+        )
+
+        persisted_bundle = (
+            storage.load_final_decision_bundle(
+                symbol,
+                market,
+            )
+        )
+
+        if persisted_bundle is None:
+            raise RuntimeError(
+                "persisted final decision bundle is missing"
+            )
+
+        final_bundle = (
+            storage.reconstruct_final_decision_bundle(
+                persisted_bundle.to_dict()
+            )
+        )
 
     return df, plan, guidance, snapshot, final_bundle
 

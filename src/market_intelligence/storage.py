@@ -4,6 +4,7 @@ import os
 import sqlite3
 import hashlib
 import secrets
+import pickle
 from pathlib import Path
 from typing import Any
 
@@ -101,6 +102,16 @@ class Storage:
             fee REAL NOT NULL,
             status TEXT NOT NULL,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS final_decision_bundles (
+            user_id INTEGER NOT NULL,
+            symbol TEXT NOT NULL,
+            market TEXT NOT NULL,
+            payload BLOB NOT NULL,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(user_id, symbol, market),
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
@@ -371,6 +382,74 @@ class Storage:
             pending = int(con.execute("SELECT COUNT(*) FROM users WHERE status='pending'").fetchone()[0])
             return {"total": total, "active": active, "pending": pending}
 
+
+    def save_final_decision_bundle(
+        self,
+        symbol: str,
+        market: str,
+        bundle: FinalDecisionBundle,
+    ) -> None:
+        payload = pickle.dumps(
+            bundle.to_dict(),
+            protocol=pickle.HIGHEST_PROTOCOL,
+        )
+
+        with self.connect() as con:
+            con.execute(
+                """
+                INSERT INTO final_decision_bundles(
+                    user_id,
+                    symbol,
+                    market,
+                    payload,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id, symbol, market)
+                DO UPDATE SET
+                    payload=excluded.payload,
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                (
+                    self._uid(),
+                    symbol.upper(),
+                    market.upper(),
+                    payload,
+                ),
+            )
+
+    def load_final_decision_bundle(
+        self,
+        symbol: str,
+        market: str,
+    ) -> FinalDecisionBundle | None:
+        with self.connect() as con:
+            row = con.execute(
+                """
+                SELECT payload
+                FROM final_decision_bundles
+                WHERE user_id=?
+                  AND symbol=?
+                  AND market=?
+                LIMIT 1
+                """,
+                (
+                    self._uid(),
+                    symbol.upper(),
+                    market.upper(),
+                ),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        payload = pickle.loads(
+            row["payload"]
+        )
+
+        return self.reconstruct_final_decision_bundle(
+            payload
+        )
 
     @staticmethod
     def reconstruct_final_decision_bundle(
