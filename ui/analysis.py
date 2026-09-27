@@ -1,6 +1,6 @@
 import streamlit as st
 
-from market_intelligence.services import analyze_symbol_v4
+from market_intelligence.services import analyze_symbol_v5
 from ui.common import price_chart
 from ui.web_shell import is_mobile_mode
 
@@ -40,7 +40,7 @@ st.markdown(
 if st.button("Analyze market", type="primary", width="stretch"):
     try:
         with st.spinner(f"Analyzing {symbol} • {period} • {profile_label}..."):
-            df, plan, guide = analyze_symbol_v4(symbol, market, period=period, equity=equity, risk_pct=risk, trading_profile=profile)
+            df, plan, guide, snapshot, final_bundle = analyze_symbol_v5(symbol, market, period=period, equity=equity, risk_pct=risk, trading_profile=profile)
 
         st.plotly_chart(price_chart(df, f"{symbol} • {market} • {period} • {guide.profile_label}", guide, compact=mobile), width="stretch")
 
@@ -54,16 +54,29 @@ if st.button("Analyze market", type="primary", width="stretch"):
 
         st.markdown("### Trade Map")
         st.caption(f"{guide.profile_label} profile • {guide.holding_note}")
-        guidance_metrics = [
-            ("Buy trigger", f"{guide.buy_trigger:,.4f}"),
-            ("Buy zone", f"{guide.buy_zone_low:,.4f} – {guide.buy_zone_high:,.4f}"),
-            ("TP1", f"{guide.sell_tp1:,.4f}"),
-            ("TP2", f"{guide.sell_tp2:,.4f}"),
-            ("Stop", f"{guide.stop_loss:,.4f}"),
-        ]
-        cols = st.columns(2 if mobile else 5)
-        for idx, (label, value) in enumerate(guidance_metrics):
-            cols[idx % len(cols)].metric(label, value)
+
+        actionable_guidance = final_bundle.guidance
+
+        if actionable_guidance.actionable:
+            guidance_metrics = [
+                ("Buy trigger", f"{actionable_guidance.buy_trigger:,.4f}"),
+                (
+                    "Buy zone",
+                    f"{actionable_guidance.buy_zone_low:,.4f} – "
+                    f"{actionable_guidance.buy_zone_high:,.4f}",
+                ),
+                ("TP1", f"{actionable_guidance.sell_tp1:,.4f}"),
+                ("TP2", f"{actionable_guidance.sell_tp2:,.4f}"),
+                ("Stop", f"{actionable_guidance.stop_loss:,.4f}"),
+            ]
+            cols = st.columns(2 if mobile else 5)
+            for idx, (label, value) in enumerate(guidance_metrics):
+                cols[idx % len(cols)].metric(label, value)
+        else:
+            st.info(
+                "Trade levels are withheld because the final "
+                "decision is not actionable."
+            )
 
         secondary = [
             ("Support", f"{guide.support:,.4f}"), ("Resistance", f"{guide.resistance:,.4f}"),
@@ -73,7 +86,7 @@ if st.button("Analyze market", type="primary", width="stretch"):
         for idx, (label, value) in enumerate(secondary):
             cols[idx % len(cols)].metric(label, value)
 
-        with st.expander("How V4 calculated these levels", expanded=False):
+        with st.expander("How V5 evaluated this analysis", expanded=False):
             st.write(f"**Regime:** {guide.regime}")
             for item in guide.rationale:
                 st.write(f"• {item}")
