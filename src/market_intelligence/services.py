@@ -6,6 +6,8 @@ from .data.provider import YFinanceProvider
 from .indicators.core import add_indicators
 from .strategy.engine import build_trade_plan
 from .strategy.guidance import build_technical_guidance
+from .analysis.adapter import build_analysis_snapshot
+from .decision import evaluate_final_decision
 
 provider = YFinanceProvider()
 
@@ -81,6 +83,40 @@ def analyze_symbol_v4(symbol, market="US", period="2Y", equity=1_000_000, risk_p
     """V4 analysis with timeframe-aware, user-selectable trading profile guidance."""
     df, plan = analyze_symbol(symbol, market, period=period, equity=equity, risk_pct=risk_pct)
     return df, plan, build_technical_guidance(df, profile=trading_profile)
+
+
+def analyze_symbol_v5(
+    symbol,
+    market="US",
+    period="2Y",
+    equity=1_000_000,
+    risk_pct=1.0,
+    trading_profile="SWING",
+):
+    """Canonical V5 analysis and final decision orchestration."""
+    df, plan = analyze_symbol(
+        symbol,
+        market,
+        period=period,
+        equity=equity,
+        risk_pct=risk_pct,
+    )
+
+    guidance = build_technical_guidance(
+        df,
+        profile=trading_profile,
+    )
+
+    snapshot = build_analysis_snapshot(
+        df,
+        plan,
+        guidance,
+        market=market,
+    )
+
+    final_bundle = evaluate_final_decision(snapshot)
+
+    return df, plan, guidance, snapshot, final_bundle
 
 
 def scan_symbols(symbols, market="US", period="1Y"):
