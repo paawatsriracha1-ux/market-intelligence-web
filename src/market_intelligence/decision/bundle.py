@@ -57,6 +57,49 @@ class FinalDecisionBundle:
     schema_version: str = "m2.3.8"
     trace: DecisionTrace = DecisionTrace()
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "decision": self.decision,
+            "guidance": self.guidance,
+            "schema_version": self.schema_version,
+            "trace": self.trace.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(
+        cls,
+        payload: dict[str, object],
+    ) -> "FinalDecisionBundle":
+        decision = payload["decision"]
+        guidance = payload["guidance"]
+        trace_payload = payload["trace"]
+
+        if not isinstance(decision, DecisionResult):
+            raise TypeError(
+                "decision must be DecisionResult"
+            )
+
+        if not isinstance(guidance, ActionableGuidance):
+            raise TypeError(
+                "guidance must be ActionableGuidance"
+            )
+
+        if not isinstance(trace_payload, dict):
+            raise TypeError(
+                "trace must be a serialized mapping"
+            )
+
+        return cls(
+            decision=decision,
+            guidance=guidance,
+            schema_version=str(
+                payload["schema_version"]
+            ),
+            trace=DecisionTrace.from_dict(
+                trace_payload
+            ),
+        )
+
     @property
     def actionable(self) -> bool:
         return self.guidance.actionable
