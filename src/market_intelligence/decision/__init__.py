@@ -7,10 +7,17 @@ from .contract import (
 )
 
 __all__ = [
-    "DecisionAction",
+
+
+    "evaluate_actionable_guidance","ActionableGuidance","DecisionAction",
     "DecisionResult",
     "VALID_DECISION_ACTIONS",
     "evaluate_safe_decision",
 ]
 
 from .pipeline import evaluate_safe_decision
+
+from .guidance import (
+    ActionableGuidance,
+    evaluate_actionable_guidance,
+)
