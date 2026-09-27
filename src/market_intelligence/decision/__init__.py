@@ -10,4 +10,7 @@ __all__ = [
     "DecisionAction",
     "DecisionResult",
     "VALID_DECISION_ACTIONS",
+    "evaluate_safe_decision",
 ]
+
+from .pipeline import evaluate_safe_decision
