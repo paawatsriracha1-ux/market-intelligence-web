@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 
 import pandas as pd
 
@@ -10,6 +10,11 @@ from market_intelligence.strategy.guidance import (
 )
 from market_intelligence.analysis.adapter import build_analysis_snapshot
 from market_intelligence.analysis.snapshot import AnalysisSnapshot
+from market_intelligence.decision.bundle import (
+    FinalDecisionBundle,
+    evaluate_final_decision,
+)
+from market_intelligence.decision.contract import DecisionResult
 
 
 class M224RealObjectIntegrationTests(unittest.TestCase):
@@ -170,6 +175,75 @@ class M224RealObjectIntegrationTests(unittest.TestCase):
 
         self.assertFalse(contains_dataframe(payload))
 
+
+
+    def test_m238_real_snapshot_reaches_final_decision_bundle(self):
+        """Real M2 objects must traverse the complete M2.3.8 boundary."""
+
+        df = self._frame()
+
+        plan = build_trade_plan(
+            df,
+            market="US",
+        )
+
+        guidance = build_technical_guidance(
+            df,
+            profile="SWING",
+        )
+
+        snapshot = build_analysis_snapshot(
+            df,
+            plan,
+            guidance,
+            market="US",
+        )
+
+        result = evaluate_final_decision(snapshot)
+
+        self.assertIsInstance(
+            result,
+            FinalDecisionBundle,
+        )
+
+        self.assertIsInstance(
+            result.decision,
+            DecisionResult,
+        )
+
+        self.assertEqual(
+            result.schema_version,
+            "m2.3.8",
+        )
+
+        # The final bundle must preserve the authoritative safe decision.
+        self.assertEqual(
+            result.action,
+            result.decision.action,
+        )
+
+        # Serialized snapshot guidance must successfully cross the
+        # M2.3.8 reconstruction boundary.
+        self.assertEqual(
+            snapshot.guidance["profile"],
+            guidance.profile,
+        )
+
+        # If the real decision is not actionable, executable price levels
+        # must remain hidden.
+        if not result.actionable:
+            self.assertIsNone(
+                result.guidance.buy_trigger,
+            )
+            self.assertIsNone(
+                result.guidance.sell_tp1,
+            )
+            self.assertIsNone(
+                result.guidance.sell_tp2,
+            )
+            self.assertIsNone(
+                result.guidance.stop_loss,
+            )
 
 if __name__ == "__main__":
     unittest.main()
