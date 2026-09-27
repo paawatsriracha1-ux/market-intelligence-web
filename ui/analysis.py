@@ -48,12 +48,19 @@ if st.button("Analyze market", type="primary", width="stretch"):
 
         metric_data = [
             ("Technical score", f"{plan.score}/100"), ("Trend", plan.trend), ("Technical Signal", plan.signal),
-            ("RSI", f"{df.iloc[-1]['RSI14']:.1f}"), ("Confidence", f"{guide.confidence}/100"),
+            ("RSI", f"{df.iloc[-1]['RSI14']:.1f}"), ("Technical Confidence", f"{guide.confidence}/100"),
         ]
         cols = st.columns(2 if mobile else 5)
         for idx, (label, value) in enumerate(metric_data):
             cols[idx % len(cols)].metric(label, value)
 
+        st.markdown("### Decision Authority")
+        st.caption(
+            "Final Decision is produced by the canonical V5 Decision Engine. "
+            "Technical Signal, Technical score, Technical Confidence, and "
+            "indicators are supporting research context and do not override "
+            "the Final Decision."
+        )
         st.markdown("### Final Decision")
 
         decision_metrics = [
