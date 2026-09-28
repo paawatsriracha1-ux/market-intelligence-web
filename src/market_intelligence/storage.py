@@ -101,6 +101,7 @@ class Storage:
             gross REAL NOT NULL,
             fee REAL NOT NULL,
             status TEXT NOT NULL,
+            idempotency_key TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );
@@ -166,6 +167,23 @@ class Storage:
             except sqlite3.DatabaseError:
                 pass
             con.executescript(schema)
+
+            # M2.18: migrate existing databases to durable execution idempotency.
+            paper_order_columns = {
+                row["name"]
+                for row in con.execute("PRAGMA table_info(paper_orders_v2)")
+            }
+            if "idempotency_key" not in paper_order_columns:
+                con.execute(
+                    "ALTER TABLE paper_orders_v2 ADD COLUMN idempotency_key TEXT"
+                )
+
+            con.execute(
+                """CREATE UNIQUE INDEX IF NOT EXISTS
+                   idx_paper_orders_v2_user_idempotency
+                   ON paper_orders_v2(user_id, idempotency_key)
+                   WHERE idempotency_key IS NOT NULL"""
+            )
             con.execute(
                 "INSERT OR IGNORE INTO paper_account(id, cash) VALUES (1, ?)",
                 (settings.default_paper_cash,),
@@ -543,58 +561,157 @@ class Storage:
             )]
             return {"cash": cash, "positions": positions, "orders": orders}
 
-    def execute_paper_order(self, symbol, market, side, qty, price, fee_bps=15.0):
+    def execute_paper_order(
+        self,
+        symbol,
+        market,
+        side,
+        qty,
+        price,
+        fee_bps=15.0,
+        idempotency_key=None,
+    ):
         uid = self._uid()
         symbol, market, side = symbol.upper(), market.upper(), side.upper()
+
         if qty <= 0 or price <= 0 or side not in {"BUY", "SELL"}:
             raise ValueError("Invalid paper order")
+
+        if idempotency_key is not None:
+            idempotency_key = str(idempotency_key).strip()
+            if not idempotency_key:
+                raise ValueError("idempotency_key must not be empty")
+
         gross = qty * price
         fee = gross * fee_bps / 10000.0
+
         with self.connect() as con:
             self._ensure_paper_account(con)
-            cash = float(con.execute("SELECT cash FROM paper_accounts_v2 WHERE user_id=?", (uid,)).fetchone()[0])
+
+            if idempotency_key is not None:
+                existing = con.execute(
+                    """SELECT symbol,market,side,qty,price,fee,status
+                       FROM paper_orders_v2
+                       WHERE user_id=? AND idempotency_key=?""",
+                    (uid, idempotency_key),
+                ).fetchone()
+
+                if existing is not None:
+                    return {
+                        "symbol": existing["symbol"],
+                        "market": existing["market"],
+                        "side": existing["side"],
+                        "qty": existing["qty"],
+                        "price": existing["price"],
+                        "fee": existing["fee"],
+                        "status": existing["status"],
+                    }
+
+            cash = float(
+                con.execute(
+                    "SELECT cash FROM paper_accounts_v2 WHERE user_id=?",
+                    (uid,),
+                ).fetchone()[0]
+            )
+
             row = con.execute(
-                "SELECT qty,avg_price FROM paper_positions_v2 WHERE user_id=? AND symbol=? AND market=?",
+                """SELECT qty,avg_price
+                   FROM paper_positions_v2
+                   WHERE user_id=? AND symbol=? AND market=?""",
                 (uid, symbol, market),
             ).fetchone()
+
             old_qty = float(row[0]) if row else 0.0
             old_avg = float(row[1]) if row else 0.0
+
             if side == "BUY":
                 total = gross + fee
+
                 if total > cash:
                     raise ValueError("Insufficient paper cash")
+
                 new_qty = old_qty + qty
                 new_avg = ((old_qty * old_avg) + gross) / new_qty
+
                 con.execute(
-                    "UPDATE paper_accounts_v2 SET cash=cash-?,updated_at=CURRENT_TIMESTAMP WHERE user_id=?",
+                    """UPDATE paper_accounts_v2
+                       SET cash=cash-?,updated_at=CURRENT_TIMESTAMP
+                       WHERE user_id=?""",
                     (total, uid),
                 )
+
                 con.execute(
-                    """INSERT INTO paper_positions_v2(user_id,symbol,market,qty,avg_price) VALUES (?,?,?,?,?)
-                       ON CONFLICT(user_id,symbol,market) DO UPDATE SET qty=excluded.qty,avg_price=excluded.avg_price""",
+                    """INSERT INTO paper_positions_v2(
+                           user_id,symbol,market,qty,avg_price
+                       )
+                       VALUES (?,?,?,?,?)
+                       ON CONFLICT(user_id,symbol,market)
+                       DO UPDATE SET
+                           qty=excluded.qty,
+                           avg_price=excluded.avg_price""",
                     (uid, symbol, market, new_qty, new_avg),
                 )
+
             else:
                 if qty > old_qty:
                     raise ValueError("Insufficient paper position")
+
                 new_qty = old_qty - qty
+
                 con.execute(
-                    "UPDATE paper_accounts_v2 SET cash=cash+?,updated_at=CURRENT_TIMESTAMP WHERE user_id=?",
+                    """UPDATE paper_accounts_v2
+                       SET cash=cash+?,updated_at=CURRENT_TIMESTAMP
+                       WHERE user_id=?""",
                     (gross - fee, uid),
                 )
+
                 if new_qty <= 1e-12:
                     con.execute(
-                        "DELETE FROM paper_positions_v2 WHERE user_id=? AND symbol=? AND market=?",
+                        """DELETE FROM paper_positions_v2
+                           WHERE user_id=? AND symbol=? AND market=?""",
                         (uid, symbol, market),
                     )
                 else:
                     con.execute(
-                        "UPDATE paper_positions_v2 SET qty=? WHERE user_id=? AND symbol=? AND market=?",
+                        """UPDATE paper_positions_v2
+                           SET qty=?
+                           WHERE user_id=? AND symbol=? AND market=?""",
                         (new_qty, uid, symbol, market),
                     )
+
             con.execute(
-                """INSERT INTO paper_orders_v2(user_id,symbol,market,side,qty,price,gross,fee,status)
-                   VALUES (?,?,?,?,?,?,?,?, 'FILLED')""",
-                (uid, symbol, market, side, qty, price, gross, fee),
+                """INSERT INTO paper_orders_v2(
+                       user_id,
+                       symbol,
+                       market,
+                       side,
+                       qty,
+                       price,
+                       gross,
+                       fee,
+                       status,
+                       idempotency_key
+                   )
+                   VALUES (?,?,?,?,?,?,?,?, 'FILLED', ?)""",
+                (
+                    uid,
+                    symbol,
+                    market,
+                    side,
+                    qty,
+                    price,
+                    gross,
+                    fee,
+                    idempotency_key,
+                ),
             )
-        return {"symbol": symbol, "market": market, "side": side, "qty": qty, "price": price, "fee": fee, "status": "FILLED"}
+
+        return {
+            "symbol": symbol,
+            "market": market,
+            "side": side,
+            "qty": qty,
+            "price": price,
+            "fee": fee,
+            "status": "FILLED",
+        }
