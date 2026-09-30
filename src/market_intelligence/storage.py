@@ -547,6 +547,37 @@ class Storage:
                 (cash, uid),
             )
 
+    def get_paper_order(self, order_id: int):
+        """Return one durable paper order owned by this Storage user."""
+        if self.user_id is None:
+            return None
+
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    id,
+                    symbol,
+                    market,
+                    side,
+                    qty,
+                    price,
+                    gross,
+                    fee,
+                    status,
+                    created_at
+                FROM paper_orders_v2
+                WHERE user_id = ?
+                  AND id = ?
+                LIMIT 1
+                """,
+                (self.user_id, order_id),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return dict(row)
     def paper_snapshot(self):
         uid = self._uid()
         with self.connect() as con:
