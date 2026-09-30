@@ -590,7 +590,7 @@ class Storage:
 
             if idempotency_key is not None:
                 existing = con.execute(
-                    """SELECT symbol,market,side,qty,price,fee,status
+                    """SELECT id,symbol,market,side,qty,price,fee,status
                        FROM paper_orders_v2
                        WHERE user_id=? AND idempotency_key=?""",
                     (uid, idempotency_key),
@@ -598,6 +598,7 @@ class Storage:
 
                 if existing is not None:
                     return {
+                        "order_id": int(existing["id"]),
                         "symbol": existing["symbol"],
                         "market": existing["market"],
                         "side": existing["side"],
@@ -679,7 +680,7 @@ class Storage:
                         (new_qty, uid, symbol, market),
                     )
 
-            con.execute(
+            order_cur = con.execute(
                 """INSERT INTO paper_orders_v2(
                        user_id,
                        symbol,
@@ -706,7 +707,10 @@ class Storage:
                 ),
             )
 
+            order_id = int(order_cur.lastrowid)
+
         return {
+            "order_id": order_id,
             "symbol": symbol,
             "market": market,
             "side": side,
