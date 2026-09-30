@@ -578,6 +578,36 @@ class Storage:
             return None
 
         return dict(row)
+
+    def list_paper_orders(self):
+        """Return all durable paper orders owned by this Storage user."""
+        if self.user_id is None:
+            return []
+
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    id,
+                    symbol,
+                    market,
+                    side,
+                    qty,
+                    price,
+                    gross,
+                    fee,
+                    status,
+                    created_at
+                FROM paper_orders_v2
+                WHERE user_id = ?
+                ORDER BY id DESC
+                """,
+                (self.user_id,),
+            ).fetchall()
+
+        return [dict(row) for row in rows]
+
+
     def paper_snapshot(self):
         uid = self._uid()
         with self.connect() as con:
