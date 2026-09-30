@@ -579,31 +579,59 @@ class Storage:
 
         return dict(row)
 
-    def list_paper_orders(self):
-        """Return all durable paper orders owned by this Storage user."""
+    def list_paper_orders(self, symbol=None):
+        """Return durable paper orders owned by this Storage user."""
         if self.user_id is None:
             return []
 
-        with self.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT
-                    id,
-                    symbol,
-                    market,
-                    side,
-                    qty,
-                    price,
-                    gross,
-                    fee,
-                    status,
-                    created_at
-                FROM paper_orders_v2
-                WHERE user_id = ?
-                ORDER BY id DESC
-                """,
-                (self.user_id,),
-            ).fetchall()
+        if symbol is None:
+            with self.connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT
+                        id,
+                        symbol,
+                        market,
+                        side,
+                        qty,
+                        price,
+                        gross,
+                        fee,
+                        status,
+                        created_at
+                    FROM paper_orders_v2
+                    WHERE user_id = ?
+                    ORDER BY id DESC
+                    """,
+                    (self.user_id,),
+                ).fetchall()
+        else:
+            normalized_symbol = str(symbol).strip().upper()
+
+            with self.connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT
+                        id,
+                        symbol,
+                        market,
+                        side,
+                        qty,
+                        price,
+                        gross,
+                        fee,
+                        status,
+                        created_at
+                    FROM paper_orders_v2
+                    WHERE user_id = ?
+                      AND symbol = ?
+                    ORDER BY id DESC
+                    """,
+                    (
+                        self.user_id,
+                        normalized_symbol,
+                    ),
+                ).fetchall()
 
         return [dict(row) for row in rows]
 
