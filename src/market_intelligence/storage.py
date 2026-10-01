@@ -640,6 +640,50 @@ class Storage:
 
         return [dict(row) for row in rows]
 
+    def count_paper_orders(self, symbol=None, side=None, market=None, status=None):
+        """Return the number of durable paper orders owned by this Storage user."""
+        if self.user_id is None:
+            return 0
+
+        normalized_symbol = None
+        if symbol is not None:
+            normalized_symbol = str(symbol).strip().upper()
+
+        normalized_side = None
+        if side is not None:
+            normalized_side = str(side).strip().upper()
+
+        normalized_market = None
+        if market is not None:
+            normalized_market = str(market).strip().upper() or None
+
+        normalized_status = None
+        if status is not None:
+            normalized_status = str(status).strip().upper() or None
+
+        query = "SELECT COUNT(*) FROM paper_orders_v2 WHERE user_id=?"
+        params = [self.user_id]
+
+        if normalized_symbol is not None:
+            query += " AND symbol=?"
+            params.append(normalized_symbol)
+
+        if normalized_side is not None:
+            query += " AND side=?"
+            params.append(normalized_side)
+
+        if normalized_market is not None:
+            query += " AND market=?"
+            params.append(normalized_market)
+
+        if normalized_status is not None:
+            query += " AND status=?"
+            params.append(normalized_status)
+
+        with self.connect() as conn:
+            row = conn.execute(query, tuple(params)).fetchone()
+
+        return int(row[0])
     def paper_snapshot(self):
         uid = self._uid()
         with self.connect() as con:
