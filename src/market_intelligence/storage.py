@@ -579,7 +579,7 @@ class Storage:
 
         return dict(row)
 
-    def list_paper_orders(self, symbol=None, side=None, market=None):
+    def list_paper_orders(self, symbol=None, side=None, market=None, status=None):
         """Return durable paper orders owned by this Storage user."""
         if self.user_id is None:
             return []
@@ -595,6 +595,10 @@ class Storage:
         normalized_market = None
         if market is not None:
             normalized_market = str(market).strip().upper() or None
+
+        normalized_status = None
+        if status is not None:
+            normalized_status = str(status).strip().upper() or None
 
         query = (
             "SELECT id,symbol,market,side,qty,price,gross,fee,status,created_at "
@@ -613,6 +617,10 @@ class Storage:
         if normalized_market is not None:
             query += " AND market=?"
             params.append(normalized_market)
+
+        if normalized_status is not None:
+            query += " AND status=?"
+            params.append(normalized_status)
 
         query += " ORDER BY id DESC"
 
