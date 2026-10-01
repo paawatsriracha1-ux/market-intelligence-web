@@ -579,7 +579,7 @@ class Storage:
 
         return dict(row)
 
-    def list_paper_orders(self, symbol=None, side=None, market=None, status=None):
+    def list_paper_orders(self, symbol=None, side=None, market=None, status=None, limit=None):
         """Return durable paper orders owned by this Storage user."""
         if self.user_id is None:
             return []
@@ -623,6 +623,10 @@ class Storage:
             params.append(normalized_status)
 
         query += " ORDER BY id DESC"
+
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
 
         with self.connect() as conn:
             rows = conn.execute(query, tuple(params)).fetchall()
