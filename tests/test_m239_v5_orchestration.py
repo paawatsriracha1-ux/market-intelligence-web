@@ -1,4 +1,4 @@
-﻿"""M2.3.9 V5 orchestration contract tests.
+"""M2.3.9 V5 orchestration contract tests.
 
 These tests define the required public V5 service boundary.
 
@@ -16,6 +16,15 @@ Production implementation is intentionally absent at this stage.
 """
 
 from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
 import unittest
 from unittest.mock import patch
